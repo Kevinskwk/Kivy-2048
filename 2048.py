@@ -14,8 +14,9 @@ import random
 
 import pickle
 
+# Color map for tiles
 tile_color_map = {
-    0: (0, 0.5, 0, 1),
+    0: (0, 0.3, 0, 1),
     2: (0, 1, 0, 1),
     4: (0, 0.8, 0.2, 1),
     8: (0, 0.6, 0.4, 1),
@@ -26,21 +27,32 @@ tile_color_map = {
     256: (0.4, 0, 0.6, 1),
     512: (0.6, 0, 0.4, 1),
     1024: (0.8, 0, 0.2, 1),
-    2048: (1, 0, 0, 1)
+    2048: (1, 0, 0, 1),
+    4096: (1, 0.2, 0, 1),
+    8192: (1, 0.4, 0, 1),
+    16384: (1, 0.6, 0, 1),
+    32768: (1, 0.8, 0, 1),
+    65536: (1, 1, 0, 1),
+    131072: (1, 1, 1, 1)
 }
+
+
+# ============================== Tile Class ==============================
 
 class Tile(Button):
     '''
-    customised Tile class with property value
+    customised Tile class (inherited from Button) with property value
     when changing value, change text and color at the same time
     '''
     def __init__(self, value=0, **kwargs):
         Label.__init__(self, **kwargs)
         self.font_size = 48
+        self.disabled = True
         self.value = value
         self.background_disabled_normal = self.background_normal
 
     def set_value(self, value):
+        '''change the background the color and text when changing the attribute value'''
         self._value = value
         if value == 0:
             self.text = ''
@@ -56,15 +68,21 @@ class Tile(Button):
 
     value = property(get_value, set_value)
 
+
+# ============================== Menu Screen ==============================
+
 class Menu(Screen):
+    '''the menu screen'''
     def __init__(self, **kwargs):
         Screen.__init__(self, **kwargs)
         self.layout = BoxLayout(orientation='vertical')
         title = Label(text='2048', font_size=48)
         startButton = Button(text='Start', on_press=self.start_game, font_size=48)
+        exitButton = Button(text='Exit', on_press=App.get_running_app().stop, font_size=48)
         
         self.layout.add_widget(title)
         self.layout.add_widget(startButton)
+        self.layout.add_widget(exitButton)
         self.add_widget(self.layout)
     
     def start_game(self, value):
@@ -72,7 +90,11 @@ class Menu(Screen):
         self.manager.transition.direction = 'left'
         self.manager.current = 'game'
 
+
+# ============================== Game Screen ==============================
+
 class Game(Screen):
+    '''the main game screen'''
     def __init__(self, **kwargs):
         Screen.__init__(self, **kwargs)
         self.layout = BoxLayout(orientation='vertical')
@@ -80,6 +102,7 @@ class Game(Screen):
         self.grid = GridLayout(cols=4, padding=2)
         self.score = 0
         self.over = False
+        self.win = False
         self.touch_initial = (0, 0)
         self.matrix = np.zeros((4, 4), np.int)
         self.tiles = []       
@@ -87,7 +110,7 @@ class Game(Screen):
             for j in range(4):
                 if j == 0:
                     self.tiles.append([])
-                self.tiles[i].append(Tile(value=0, disabled=True))
+                self.tiles[i].append(Tile(value=0))
                 self.grid.add_widget(self.tiles[i][j])
         
         # top bar
@@ -118,10 +141,14 @@ class Game(Screen):
         self.add_tile()
         self.add_tile()
 
+
+    # ============================== Controlling/ User Input ==============================
+
     def _touch_down(self, instance, touch):
         self.touch_initial = (touch.x, touch.y)
 
     def _touch_up(self, instance, touch):
+        '''react based on mouse input'''
         if not self.over:
             dx = touch.x - self.touch_initial[0]
             dy = touch.y - self.touch_initial[1]
@@ -143,6 +170,7 @@ class Game(Screen):
         self._keyboard = None
 
     def _on_keyboard_down(self, keyboard, keycode, text, modifiers):
+        '''react based on keyboard input'''
         if not self.over:
             if keycode[1] == 'up':
                 self.move(1)
@@ -153,6 +181,9 @@ class Game(Screen):
             elif keycode[1] == 'right':
                 self.move(2)
             return True
+
+
+    # ============================== Game Implementation ==============================
 
     def add_tile(self):
         '''randomly add one tile with number 2 or 4'''
@@ -169,7 +200,7 @@ class Game(Screen):
         self.update()
         
     def get_empty(self):
-        '''retuen a 2d numpy array with locations of empty entries'''
+        '''return a 2d numpy array with locations of empty entries'''
         return np.argwhere(self.matrix == 0)
 
     def move(self, direction, trial=False):
@@ -214,7 +245,7 @@ class Game(Screen):
 
     def shift(self, row, direction):
         '''
-        shift the row and combine the rows
+        shift the numbers and combine colliding numbers in one row
         direction: left if direction==0, right if direction==1
         return:output row, score
         '''
@@ -251,12 +282,41 @@ class Game(Screen):
 
         return (output, score)     
 
+    def is_over(self):
+        '''check if the game is over by trying all possible movements'''
+        if self.get_empty().size != 0:
+            return False
+        else:
+            for dir in range(4):
+                if self.move(dir, trial=True)[0] == True:
+                    return False
+            return True
+    
+    def is_win(self):
+        '''check if player has reached 2048'''
+        if np.amax(self.matrix) >= 2048:
+            return True
+        else:
+            return False
+
     def update(self):
-        '''update the labels'''
+        '''update the tiles'''
         for i in range(4):
             for j in range(4):
                 self.tiles[i][j].value = self.matrix[i, j]
 
+        '''check if it's the first time to get 2048, then popup the winning notification'''
+        if (not self.win) and self.is_win():
+            self.win = True
+            content = BoxLayout(orientation='vertical')
+            content.add_widget(Label(text='Congrats! You have made it to 2048!', font_size=24))
+            popup = Popup(title='Notification',
+                          content=content,
+                          size_hint=(0.4, 0.3)) 
+            content.add_widget(Button(text="Continue",  on_press=popup.dismiss))
+            popup.open()
+
+        '''pop up the game over notification'''
         if self.over:
             self.scoreLabel.text = 'Game Over\nScore: {}'.format(self.score)
             popup = Popup(title='Notification',
@@ -267,21 +327,13 @@ class Game(Screen):
             self.scoreLabel.text = str(self.score)
 
 
-    def is_over(self):
-        '''check if the game is over by trying all possible movements'''
-        if self.get_empty().size != 0:
-            return False
-        else:
-            for dir in range(4):
-                if self.move(dir, trial=True)[0] == True:
-                    return False
-            return True
-        
+# ============================== Button Functions ==============================
 
     def restart(self, value):
         '''restart the game, bound to restart button'''
         self.score = 0
         self.over = False
+        self.win = False
         self.matrix = np.zeros((4, 4), np.int)
         for row in self.tiles:
             for tile in row:
@@ -291,7 +343,7 @@ class Game(Screen):
         self.add_tile()
 
     def save(self, value):
-        '''save the game'''
+        '''save the game using pickle serialization'''
         if self.over:
             msg = 'You cannot save a game\n that is already over!'        
         else:
@@ -327,6 +379,7 @@ class Game(Screen):
         popup.open()
 
         self.over = self.is_over()
+        self.win = self.is_win()
         self.update()
 
     def quit(self, value):
@@ -334,6 +387,8 @@ class Game(Screen):
         self.manager.transition.direction = 'right'
         self.manager.current = 'menu'
 
+
+# ============================== GameApp Class ==============================
 
 class GameApp(App):
     def build(self):
